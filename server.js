@@ -1,5 +1,6 @@
 const express = require('express');
-const puppeteer = require('puppeteer-core'); // ← mudança aqui
+const puppeteer = require('puppeteer-core');
+const chromium = require('@sparticuz/chromium');
 const app = express();
 
 app.get('/linkedin', async (req, res) => {
@@ -10,8 +11,10 @@ app.get('/linkedin', async (req, res) => {
 
   let browser;
   try {
-    browser = await puppeteer.connect({
-      browserWSEndpoint: `wss://chrome.browserless.io?token=${process.env.BROWSERLESS_TOKEN}`
+    browser = await puppeteer.launch({
+      args: chromium.args,
+      executablePath: await chromium.executablePath(),
+      headless: chromium.headless,
     });
 
     const page = await browser.newPage();
@@ -33,7 +36,6 @@ app.get('/linkedin', async (req, res) => {
     await new Promise(r => setTimeout(r, 5000));
 
     const data = await page.evaluate(() => {
-      // Tenta múltiplos seletores para cada métrica
       const buscar = (...seletores) => {
         for (const s of seletores) {
           const els = document.querySelectorAll(s);
@@ -73,7 +75,7 @@ app.get('/linkedin', async (req, res) => {
   } catch (err) {
     res.status(500).json({ erro: err.message });
   } finally {
-    if (browser) await browser.close(); // fecha mesmo se der erro
+    if (browser) await browser.close();
   }
 });
 
