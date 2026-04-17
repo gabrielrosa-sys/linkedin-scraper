@@ -32,7 +32,7 @@ app.get('/linkedin', async (req, res) => {
       path: '/'
     });
 
-    await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
     await new Promise(r => setTimeout(r, 5000));
 
     const data = await page.evaluate(() => {
