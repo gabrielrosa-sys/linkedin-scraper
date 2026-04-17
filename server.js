@@ -1,62 +1,87 @@
 const express = require('express');
-const puppeteer = require('puppeteer');
-
+const puppeteer = require('puppeteer-core'); // ← mudança aqui
 const app = express();
 
 app.get('/linkedin', async (req, res) => {
   const url = req.query.url;
-
   if (!url) {
-    return res.send('Falta URL');
+    return res.status(400).json({ erro: 'Falta o parâmetro ?url=' });
   }
 
+  let browser;
   try {
-    const browser = await puppeteer.launch({
-      headless: true,
-      executablePath: '/opt/render/.cache/puppeteer/chrome/linux-127.0.6533.88/chrome-linux64/chrome',
-      args: ['--no-sandbox', '--disable-setuid-sandbox']
+    browser = await puppeteer.connect({
+      browserWSEndpoint: `wss://chrome.browserless.io?token=${process.env.BROWSERLESS_TOKEN}`
     });
 
     const page = await browser.newPage();
 
-    // 🔐 COOKIE (VAMOS CONFIGURAR DEPOIS)
-    const cookie = {
+    // Simula um navegador real
+    await page.setUserAgent(
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    );
+
+    // Cookie de autenticação do LinkedIn
+    await page.setCookie({
       name: 'li_at',
       value: process.env.LINKEDIN_COOKIE,
       domain: '.linkedin.com',
       path: '/'
-    };
+    });
 
-    await page.setCookie(cookie);
-
-    await page.goto(url, { waitUntil: 'networkidle2' });
-
+    await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
     await new Promise(r => setTimeout(r, 5000));
 
     const data = await page.evaluate(() => {
-      const getText = (selector) => {
-        const el = document.querySelector(selector);
-        return el ? el.innerText : '0';
+      // Tenta múltiplos seletores para cada métrica
+      const buscar = (...seletores) => {
+        for (const s of seletores) {
+          const els = document.querySelectorAll(s);
+          for (const el of els) {
+            const texto = el.innerText?.trim();
+            if (texto && /\d/.test(texto)) return texto;
+          }
+        }
+        return '0';
       };
 
       return {
-        likes: getText('[aria-label*="reactions"]'),
-        comments: getText('[aria-label*="comments"]'),
-        shares: getText('[aria-label*="reposts"]'),
-        views: getText('[aria-label*="views"]')
+        likes: buscar(
+          '[aria-label*="reaction"]',
+          '[aria-label*="like"]',
+          '.social-counts-reactions__count'
+        ),
+        comments: buscar(
+          '[aria-label*="comment"]',
+          '.social-counts-comments'
+        ),
+        shares: buscar(
+          '[aria-label*="repost"]',
+          '[aria-label*="share"]',
+          '.social-counts-reposts'
+        ),
+        views: buscar(
+          '[aria-label*="view"]',
+          '.social-counts-views',
+          '.analytics-entry-point'
+        )
       };
     });
 
-    await browser.close();
-    res.json(data);
+    res.json({ sucesso: true, url, ...data });
 
   } catch (err) {
-    res.send('Erro: ' + err.message);
+    res.status(500).json({ erro: err.message });
+  } finally {
+    if (browser) await browser.close(); // fecha mesmo se der erro
   }
 });
 
-const PORT = process.env.PORT || 3000;
+app.get('/', (req, res) => {
+  res.send('Servidor LinkedIn Scraper rodando ✅');
+});
 
+const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log('Servidor rodando na porta ' + PORT);
 });
